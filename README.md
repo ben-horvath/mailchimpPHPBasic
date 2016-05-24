@@ -9,3 +9,4 @@ Uses API v3.0
   * Interest groups can be set
 * Unsubscribe
 * Check if subscribed
+* Get info on interest groupings
