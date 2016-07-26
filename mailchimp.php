@@ -12,13 +12,19 @@ class MailChimp {
         $this->url_base = 'http://' . $this->data_center . '.api.mailchimp.com/3.0';
     }
 
-    public function subscribe( $list_id, $email, $interest_group = null ) {
+    public function subscribe( $list_id, $email, $interest_group = null, $name = null ) {
         $request_type = 'POST';
         $subscribe_res = $this->url_base . '/lists/' . $list_id . '/members';
+        $merge_fields = new stdClass();
         $payload = array(
             'email_address' => $email,
             'status' => 'subscribed'
         );
+        if( !empty( $name ) ) {
+            $merge_fields->FNAME = $name;
+            $merge_fields->LNAME = "";
+            $payload['merge_fields'] = $merge_fields;
+        }
 
         /* Set interest group(s) */
         if( is_array( $interest_group ) ) {
