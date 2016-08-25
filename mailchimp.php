@@ -6,13 +6,15 @@ class MailChimp {
     private $data_center;
     private $api_key;
 
+    private $lists;
+
     public function __construct( $api_key ) {
         $this->api_key = $api_key;
         $this->data_center = substr( strrchr( $api_key, '-' ), 1 );
         $this->url_base = 'http://' . $this->data_center . '.api.mailchimp.com/3.0';
     }
 
-    public function subscribe( $list_id, $email, $interest_group = null, $name = null ) {
+    public function subscribe( $list_id, $email, $interest_group = null, $name = null, $fields = null ) {
         $request_type = 'POST';
         $subscribe_res = $this->url_base . '/lists/' . $list_id . '/members';
         $merge_fields = new stdClass();
@@ -24,6 +26,20 @@ class MailChimp {
             $merge_fields->FNAME = $name;
             $merge_fields->LNAME = "";
             $payload['merge_fields'] = $merge_fields;
+        }
+        if( gettype( $fields ) == "array" ) {
+            $merges_available = $this->get_merge_fields( $list_id );
+            if( gettype( $merges_available ) == 'array' ) {
+                foreach( $fields as $key => $value ) {
+                    if( in_array( $key, $merges_available ) ) {
+                        $merge_fields->{$key} = $value; /* TODO: check if the actual key can be a php object property */
+                    } else {
+                        /* TODO: handle error */
+                    }
+                }
+            } else {
+                /* TODO: handle error */
+            }
         }
 
         /* Set interest group(s) */
@@ -102,7 +118,7 @@ class MailChimp {
         Returns an array of interest groups (interest categories).
         An interest group object conains an id, a title and an array of interests.
         An interest object contains an id and a name.
-     */
+    */
     public function interest_grouping_info( $list_id ) {
         $request_type = 'GET';
         $interest_group_res = $this->url_base . '/lists/' . $list_id . '/interest-categories?fields=categories.id,categories.title';
@@ -121,7 +137,7 @@ class MailChimp {
 
         $groupings = array();
 
-        foreach ($categories->categories as $category) {
+        foreach( $categories->categories as $category ) {
             $interests_resource = $this->url_base . '/lists/' . $list_id . '/interest-categories/' . $category->id . '/interests?fields=interests.id,interests.name';
             
             curl_setopt( $ch, CURLOPT_URL, $interests_resource );
@@ -133,7 +149,7 @@ class MailChimp {
 
             $category->interests = array();
 
-            foreach ($interests->interests as $interest) {
+            foreach( $interests->interests as $interest ) {
                 $category->interests[] = $interest;
             }
 
@@ -143,6 +159,107 @@ class MailChimp {
         curl_close( $ch );
 
         return $groupings;
+    }
+
+    public function get_merge_fields( $list_id ) {
+        try {
+            $merge_fields = array();
+
+            if( gettype( $list_id ) != "string" || strlen( $list_id ) < 1 ) {
+                throw new Exception( 'Argument error in get_merge_fields().', 1 );
+            }
+
+            $lists = $this->get_lists();
+            if( gettype( $lists ) != 'array' ) {
+                throw $lists;
+            }
+
+            if( !in_array( $list_id, $lists ) ) {
+                throw new Exception( 'No such list in this MailChimp account.', 1 );
+            }
+
+            $request_type = 'GET';
+            $merge_fields_res = $this->url_base . '/lists/' . $list_id . '/merge-fields';
+
+            $ch = curl_init();
+
+            curl_setopt( $ch, CURLOPT_USERPWD, 'user:' . $this->api_key );
+            curl_setopt( $ch, CURLOPT_CUSTOMREQUEST, $request_type );
+            curl_setopt( $ch, CURLOPT_URL, $merge_fields_res );
+            curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true );
+
+            $response_json = curl_exec( $ch );
+
+            $response_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+
+            curl_close( $ch );
+
+            if( $response_code != 200 ) {
+                throw new Exception( 'MailChimp could not return the merge fields.', 2 );
+            }
+
+            $response = json_decode( $response_json );
+            if( !isset( $response->merge_fields ) || gettype( $response->merge_fields ) != 'array' ) {
+                throw new Exception( 'MailChimp returned with an error.', 2 );
+            }
+
+            foreach( $response->merge_fields as $merge_field ) {
+                $merge_fields[] = $merge_field->tag;
+            }
+
+            return $merge_fields;
+        } catch( Exception $e ) {
+            return $e;
+        }
+    }
+
+    public function get_lists( $flush = false ) {
+        try {
+            if( gettype( $flush ) != 'boolean' ) {
+                throw new Exception( 'Argument error in get_lists().', 1 );
+            }
+
+            if( gettype( $this->lists ) == 'array' && !$flush ) {
+                return $this->lists;
+            }
+
+            $lists = array();
+
+            $request_type = 'GET';
+            $merge_fields_res = $this->url_base . '/lists';
+
+            $ch = curl_init();
+
+            curl_setopt( $ch, CURLOPT_USERPWD, 'user:' . $this->api_key );
+            curl_setopt( $ch, CURLOPT_CUSTOMREQUEST, $request_type );
+            curl_setopt( $ch, CURLOPT_URL, $merge_fields_res );
+            curl_setopt( $ch, CURLOPT_RETURNTRANSFER, true );
+
+            $response_json = curl_exec( $ch );
+
+            $response_code = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
+
+            curl_close( $ch );
+
+            if( $response_code != 200 ) {
+                throw new Exception( 'MailChimp could not return the lists.', 2 );
+            }
+                
+            $response = json_decode( $response_json );
+            if( !isset( $response->lists ) || gettype( $response->lists ) != 'array' ) {
+                throw new Exception( 'MailChimp returned with an error.', 2 );
+            }
+
+            foreach( $response->lists as $list ) {
+                $lists[] = $list->id;
+            }
+
+            $this->lists = $lists;
+
+            return $lists;
+        } catch( Exception $e ) {
+            return $e;
+        }
     }
 }
 
